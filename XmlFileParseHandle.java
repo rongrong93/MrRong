@@ -12,14 +12,11 @@ import org.dom4j.Element;
 import com.newland.csf.frame.util.XmlUtils;
 
 
-public class XmlFileParseHandle {
+public class XmlFileParseHandle.java {
 	private  Map<Integer,Integer> listSize = new HashMap<Integer,Integer>();
-	private  boolean contineScan = true;
-	private  Element rootE;
-	public List<Integer> indexList;
-	public boolean isFirstScan = true;
+	public List<Integer> indexList = new ArrayList<Integer>();
 	public static void main(String[] args) throws DocumentException  {
-		new Test().handle();
+		new XmlFileParseHandle.java().handle();
 	}
 
 	public void handle() throws DocumentException{
@@ -63,10 +60,10 @@ public class XmlFileParseHandle {
 		return rule_map;
 	}
 	//除根节点外,取值最多层数
-	public int maxDep = 0;
 	public void  getParaMaps(Map<String,String> rule_map,String xml) throws DocumentException{
 		String[] main_element = rule_map.get("mainElement").split(",");
 		Map<String,Boolean> paraMap = new HashMap<String,Boolean>();
+		int maxDep = 0;
 		for(String para : main_element){
 			paraMap.put(para, true);
 			if(para.split("/").length - 2 > maxDep){
@@ -75,7 +72,7 @@ public class XmlFileParseHandle {
 		}
 		Document doc = null;
 		doc = XmlUtils.parseText(xml);
-		rootE = doc.getRootElement();
+		Element rootE = doc.getRootElement();
 		String sxml = ""; 
 		boolean isCDATA = Boolean.parseBoolean(rule_map.get("isCDATA"));
 		if(isCDATA){
@@ -90,13 +87,13 @@ public class XmlFileParseHandle {
 		}
 		doc = XmlUtils.parseText(sxml);
 		rootE = doc.getRootElement();
-		indexList = new ArrayList<Integer>();
 		for(int i = 0; i < maxDep; i++){
 			indexList.add(-1);
 		}
+//		indexList = Collections.nCopies(maxDep, -1);
 		Map<String,String> resultMap;
 
-		while(contineScan){
+		do{
 			resultMap = new HashMap<String,String>();
 			System.out.println("==============================");
 			//每次获得一个节点值
@@ -104,13 +101,9 @@ public class XmlFileParseHandle {
 				String[] nodeNames = nodeName.split("/");
 				repeatScanNode(rootE,nodeNames,resultMap,0);
 			}
-			
-			isFirstScan = false;
 			//入库
 			
-			
-			contineScan = doNextList();
-		}
+		}while(doNextList());
 	}
 	
 	@SuppressWarnings("unchecked")
@@ -121,7 +114,7 @@ public class XmlFileParseHandle {
 		Element nextElement = null;
 		
 		if(nextElements.size() > 1){
-			if(isFirstScan){
+			if(!listSize.containsKey(i)){
 				nextElement = nextElements.get(0);
 				listSize.put(i, nextElements.size());
 				if(indexList.get(i) < 0){
@@ -151,44 +144,26 @@ public class XmlFileParseHandle {
 	 * 将最深一层list的索引+1，如果最深层遍历完，置0,上一层list+1
 	 */
 	public boolean doNextList(){
-		for(int i = indexList.size() - 1 ; i >= 0; i--){
-			int index = indexList.get(i);
+		//取最底层list的个数
+		int i = indexList.size() - 1;
+		while(true){
+			if(i < 0 )//遍历至最顶层无list时退出
+				return false;
+			int index = indexList.get(i);//上一次去list的下标
 			if(index >= 0){
-				//最深一层list是否遍历完，如果没有,下标+1如果遍历完，置0，上一层list下标+1
+				//最深一层list是否遍历完，如果没有,下标+1如果遍历完置0,上一层list下标+1
 				if(index < listSize.get(i) - 1){
 					index ++;
 					indexList.set(i, index);
 					return true;
-				}else{//如果index =  listSize.get(i) - 1，说明该层list已经遍历完，下标置0，上一层listxiabiao
+				}else{
 					index = 0;
 					indexList.set(i, index);
-					int j = i - 1;
-					//上一层list下标+1
-					while(true){
-						//如果没有上层list，退出程序
-						if(j < 0)
-							return false;
-						int preIndex = indexList.get(j);
-						if(preIndex >= 0){
-							if(preIndex < listSize.get(j) - 1){
-								preIndex ++;
-								indexList.set(j, preIndex);
-								return true;
-							}else{
-								preIndex = 0;
-								indexList.set(j, preIndex);
-								j--;
-								continue;
-							}
-						}else{
-							j--;
-						}
-					}
+					i --;
 				}
 			}else{
-				continue;
+				i --;
 			}
 		}
-		return false;
 	}
 }
