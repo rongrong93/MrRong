@@ -94,7 +94,7 @@ public class XmlFileParseHandle {
 		 
 		do{
 			Map<String,String> resultMap = new HashMap<String,String>();
-			//每次获得一个节点值
+			//每次获得一个节点值2
 			for(String nodeName : main_element){
 				String[] nodeNames = nodeName.split("/");
 				repeatScanNode(rootE,nodeNames,resultMap,0);
