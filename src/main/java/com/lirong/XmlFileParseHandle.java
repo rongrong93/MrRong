@@ -91,7 +91,7 @@ public class XmlFileParseHandle {
 		doc = DocumentHelper.parseText(xml);
 		rootE = doc.getRootElement();
 		indexList = Arrays.asList(Collections.nCopies(maxDep, -1).toArray());
-		
+		 
 		do{
 			Map<String,String> resultMap = new HashMap<String,String>();
 			//每次获得一个节点值
