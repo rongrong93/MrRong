@@ -1,5 +1,10 @@
-package com.lirong;
+package com.newland.crm.cmc.daemon.file;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -7,159 +12,270 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import javax.xml.bind.JAXBException;
+
 import org.dom4j.Document;
 import org.dom4j.DocumentException;
-import org.dom4j.DocumentHelper;
 import org.dom4j.Element;
 
-public class XmlFileParseHandle {
-	private  Map<Integer,Integer> listSize = new HashMap<Integer,Integer>();
+import com.newland.cbf.frame.task.TraceMessage;
+import com.newland.cbf.frame.task.execute.ModuleCall;
+import com.newland.cbf.frame.task.execute.ModuleCallMessage;
+import com.newland.crm.cmc.bean.entity.file.CmcXmlFileTemplateBean;
+import com.newland.crm.cmc.common.define.GlobalDefs;
+import com.newland.crm.cmc.dao.flow.CmcXmlFileTemplateDao;
+import com.newland.crm.cmc.dao.flow.ParseFileDao;
+import com.newland.csf.common.config.manager.FileConfigManager;
+import com.newland.csf.common.log.LogObj;
+import com.newland.csf.common.log.LogObjFactory;
+import com.newland.csf.frame.util.MtcThreadLocalMgr;
+import com.newland.csf.frame.util.Util;
+import com.newland.csf.frame.util.XmlUtils;
+
+/**
+ *
+ * @author lirong 2018.08.23 æè¿°:è§£æxmlæ ¼å¼æ–‡ä»¶ã€å…¥åº“
+ */
+
+public class XmlFileHandler implements ModuleCall {
+	private static LogObj logCache = LogObjFactory.getLogObj(XmlFileHandler.class);
+	private Map<Integer, Integer> listSize = new HashMap<Integer, Integer>();
+	private Map<String, Object> smcFileOperation = new HashMap<String, Object>();
+	private String file_name;
+	private String file_template_id;
+	private ParseFileDao parseFileDao = new ParseFileDao();
+	private CmcXmlFileTemplateDao cmcXmlFileTemplate = new CmcXmlFileTemplateDao();
 	private List<Object> indexList = new ArrayList<Object>();
-	private static String element_rule;
-	private static StringBuffer sxml = new StringBuffer();
-	
-	static{
-		sxml.append("<RolBakFile><a><SvcCont><![CDATA[<?xml version='1.0' encoding='GBK' ?><RolBakChk><ReqDay>20180808</ReqDay><RolBakList><ReqType>0</ReqType><PriMSISDN>13800000000</PriMSISDN><EID>666666</EID><AuxIMEI>dfkg4454548</AuxIMEI><AuxType>12</AuxType><ProfileStatus>01</ProfileStatus><names><name>zhangsan1</name><age>18</age></names><names><name>zhangsan2</name><age>18</age></names><names><name>zhangsan3</name><age>18</age></names><names><name>zhangsan4</name><age>18</age></names><CreateTime>20180808120000</CreateTime></RolBakList><RolBakList><names><name>zhangsan5</name><age>18</age></names><names><name>zhangsan6</name><age>18</age></names><names><name>zhangsan7</name><age>18</age></names><names><name>zhangsan8</name><age>18</age></names><ReqType>1</ReqType><PriMSISDN>13900000000</PriMSISDN><EID>666667</EID><AuxIMEI>dfkg22454548</AuxIMEI><AuxType>1</AuxType><ProfileStatus>0</ProfileStatus><CreateTime>20190808120000</CreateTime></RolBakList></RolBakChk>]]></SvcCont></a></RolBakFile>");
-		element_rule = "isCDATA:true;CDATAPath:RolBakFile/a/SvcCont;"
-				+ "mainElement:"
-				+ "/RolBakChk/ReqDay,"
-				+ "/RolBakChk/RolBakList/ReqType,"
-				+ "/RolBakChk/RolBakList/PriMSISDN,"
-				+ "/RolBakChk/RolBakList/EID,"
-				+ "/RolBakChk/RolBakList/AuxIMEI,"
-				+ "/RolBakChk/RolBakList/AuxType,"
-				+ "/RolBakChk/RolBakList/ProfileStatus,"
-				+ "/RolBakChk/RolBakList/CreateTime,"
-				+ "/RolBakChk/RolBakList/names/name;";
-		
-	}
-	
-	
-	public static void main(String[] args) throws DocumentException  {
-		new XmlFileParseHandle().handle();
+	ThreadLocal<Boolean> doAdd = new ThreadLocal<Boolean>();
+
+	@Override
+	public void call(List<ModuleCallMessage> list, TraceMessage tracemessage) {
+		logCache.debug(GlobalDefs.PLUGIN_LOG_KEY, "XmlFileHandler call begin....");
+		init(list);
+		try {
+			pluginImpl();
+		} catch (Exception e) {
+			logCache.debug(GlobalDefs.PLUGIN_LOG_KEY, "æ–‡ä»¶è§£æå¤±è´¥ï¼");
+			logCache.error(GlobalDefs.PLUGIN_LOG_KEY, Util.getStackTraceMsg(e));
+			list.get(0).setResult_code("1");
+		} catch (Error e2) {
+			logCache.debug(GlobalDefs.PLUGIN_LOG_KEY, "æ–‡ä»¶è§£æå¤±è´¥ï¼");
+			logCache.error(GlobalDefs.PLUGIN_LOG_KEY, "error:" + Util.getStackTraceMsg(e2));
+			list.get(0).setResult_code("1");
+		}
+
+		finish();
 	}
 
-	public void handle() throws DocumentException{ 
-		
-		Map<String, String> rule_map = elementRule2Map();
-		getParaMaps(rule_map,sxml.toString().trim());
+	@SuppressWarnings("unchecked")
+	private void init(List<ModuleCallMessage> pluginOrder) {
+		smcFileOperation = (Map<String, Object>) pluginOrder.get(0).getInput_message();
 	}
-	
+
+	protected void pluginImpl() throws IOException, JAXBException, Exception {
+		logCache.debug(GlobalDefs.PLUGIN_LOG_KEY, "XmlFileHandler pluginImpl() begin....");
+		Integer file_template_id = Integer.valueOf((String) smcFileOperation.get("file_template_id"));
+		isConfigurationSmcFileTemplate((String) smcFileOperation.get("file_template_id"));
+
+		String file_path = (String) smcFileOperation.get("romote_dir");
+		file_name = (String) smcFileOperation.get("file_name");
+		setFile_template_id((String) smcFileOperation.get("file_template_id"));
+		file_path = file_path.endsWith("/") ? file_path
+				: (new StringBuilder()).append(file_path).append("/").toString();
+		logCache.debug(GlobalDefs.PLUGIN_LOG_KEY,
+				(new StringBuilder()).append("remote_dir=").append(file_path).append(",file_name=").append(file_name)
+						.append("  file_template_id = ").append(file_template_id).toString());
+		String fullPath = (new StringBuilder()).append(file_path).append(file_name).toString();
+
+		CmcXmlFileTemplateBean read_file_cfg = getTransBean(file_template_id);
+		String sql_id = ParseFileDao.RULE_SQL_RELA.get(file_template_id);
+		logCache.debug(GlobalDefs.PLUGIN_LOG_KEY, "sql_id:" + sql_id);
+
+		Map<String, String> rule_map = elementRule2Map(read_file_cfg.getElement_rule());
+		logCache.debug(GlobalDefs.PLUGIN_LOG_KEY, "XmlFileHandler elementRule2Map()è·å–xmlæ ¼å¼é…ç½®è§„åˆ™å­˜å…¥mapä¸­ :  " + rule_map);
+		String xmlContent = readFile4xml(fullPath, rule_map);
+		logCache.debug(GlobalDefs.PLUGIN_LOG_KEY, "XmlFileHandler readFile4xmlè°ƒç”¨è¿”å›æ–‡ä»¶å†…å®¹ xmlContent :  " + xmlContent);
+		getParaMaps(rule_map, xmlContent, sql_id);
+
+	}
+
 	/**
-	 * ½«xmlÔªËØ¹æÔò´æÈëmapÖĞ
-	 * @param element_rule
-	 * @throws DocumentException
+	 * remarkï¼šfile_template_id å¿…é¡»åœ¨smc.smc_file_templateè¡¨ä¸­é…ç½®é¢„å  é¿å…æ¨¡æ¿idç›¸åŒ,å¯¼è‡´å–å·¥å•è¡¨å†²çª.
+	 *
+	 * @throws Exception
 	 */
-	private Map<String,String> elementRule2Map() throws DocumentException{
-		String[] rules = element_rule.split(";");
+	private void isConfigurationSmcFileTemplate(String file_template_id) throws Exception {
+		if (FileConfigManager.getTemplate(file_template_id) == null)
+			throw new Exception("æœªåœ¨smc.smc_file_templateè¡¨ä¸­é…ç½®é¢„å ...");
+	}
 
-		Map<String,String> rule_map = new HashMap<String,String>();
-		
-		/**
-		 * »ñµÃxml¸ñÊ½ÅäÖÃ¹æÔò´æÈëmapÖĞ
-		 */
-		for(String rule : rules){
+	private CmcXmlFileTemplateBean getTransBean(Integer file_template_id) {
+		CmcXmlFileTemplateBean readFileCfgBean = cmcXmlFileTemplate.getCmcXmlFileTemplate(file_template_id);
+		if (readFileCfgBean == null)
+			throw new RuntimeException("read cmc_xml_file_template table config not found exception");
+		return readFileCfgBean;
+	}
+
+	private Map<String, String> elementRule2Map(String element_rule) throws DocumentException {
+		String[] rules = element_rule.split(";");
+		HashMap<String, String> rule_map = new HashMap<String, String>();
+		// è·å¾—xmlæ ¼å¼é…ç½®è§„åˆ™å­˜å…¥mapä¸­
+		for (String rule : rules) {
 			String key = rule.split(":")[0];
 			String value = rule.split(":")[1];
 			rule_map.put(key, value);
 		}
 		return rule_map;
 	}
-	//³ı¸ù½ÚµãÍâ,È¡Öµ×î¶à²ãÊı
-	private void  getParaMaps(Map<String,String> rule_map,String xml) throws DocumentException{
+
+	protected String readFile4xml(String full_path, Map<String, String> ruleMap) throws IOException, DocumentException {
+		logCache.debug(GlobalDefs.PLUGIN_LOG_KEY, "XmlFileHandler readFile4xml begin....");
+		File file = new File(full_path);
+		FileInputStream fis = new FileInputStream(file);
+		BufferedReader in = new BufferedReader(new InputStreamReader(fis, "UTF-8"));
+		StringBuffer sb = new StringBuffer();
+		String tmp = in.readLine();
+
+		while (tmp != null && !" ".equals(tmp)) {
+			sb.append(tmp);
+			tmp = in.readLine();
+		}
+		in.close();
+		if (sb != null && sb.length() > 0) {
+			return sb.toString().trim();
+		} else {
+			return null;
+		}
+	}
+
+	// é™¤æ ¹èŠ‚ç‚¹å¤–,å–å€¼æœ€å¤šå±‚æ•°
+	private void getParaMaps(Map<String, String> rule_map, String xml, String sql_id) throws DocumentException {
+		int maxDep = 0;// è®°å½•æœ€æ·±ä¸€å±‚æ¬¡æ•°
 		String[] main_element = rule_map.get("mainElement").split(",");
-		Map<String,Boolean> paraMap = new HashMap<String,Boolean>();
-		int maxDep = 0;
-		for(String para : main_element){
+		logCache.debug(GlobalDefs.PLUGIN_LOG_KEY, "æ–‡ä»¶è§£æä¸»è¦èŠ‚ç‚¹main_element : " + Arrays.toString(main_element));
+		Map<String, Boolean> paraMap = new HashMap<String, Boolean>();
+		Document doc = XmlUtils.parseText(xml);
+		Element rootE = doc.getRootElement();
+		boolean isCDATA = Boolean.parseBoolean(rule_map.get("isCDATA"));
+		logCache.debug(GlobalDefs.PLUGIN_LOG_KEY, "XmlFileHandler getParaMaps()æ˜¯å¦XMLèŠ‚ç‚¹æ˜¯å¦åœ¨CDATAå–ï¼š" + isCDATA);
+		for (String para : main_element) {
 			paraMap.put(para, true);
-			if(para.split("/").length - 2 > maxDep){
+			if (para.split("/").length - 2 > maxDep) {
 				maxDep = para.split("/").length - 2;
 			}
 		}
-		Document doc = DocumentHelper.parseText(xml);
-		Element rootE = doc.getRootElement();
-		boolean isCDATA = Boolean.parseBoolean(rule_map.get("isCDATA"));
-		if(isCDATA){
+		if (isCDATA) {
 			String[] cdata_path = rule_map.get("CDATAPath").split("/");
-			//»ñµÃCDATAµÄÉÏÒ»¼¶ÔªËØ
-			for(int i = 1; i < cdata_path.length; i ++){
+			// è·å¾—CDATAçš„ä¸Šä¸€çº§å…ƒç´ 
+			for (int i = 1; i < cdata_path.length; i++) {
 				rootE = rootE.element(cdata_path[i]);
 			}
 			xml = rootE.getTextTrim();
 		}
 
-		doc = DocumentHelper.parseText(xml);
+		doc = XmlUtils.parseText(xml);
 		rootE = doc.getRootElement();
 		indexList = Arrays.asList(Collections.nCopies(maxDep, -1).toArray());
-		 
-		do{
-			Map<String,String> resultMap = new HashMap<String,String>();
-			//Ã¿´Î»ñµÃÒ»¸ö½ÚµãÖµ2
-			for(String nodeName : main_element){
+
+		do {
+			doAdd.set(true);
+			Map<String, String> resultMap = new HashMap<String, String>();
+			for (String nodeName : main_element) {
 				String[] nodeNames = nodeName.split("/");
-				repeatScanNode(rootE,nodeNames,resultMap,0);
+				repeatScanNode(rootE, nodeNames, resultMap, 0);
 			}
-			//Èë¿â
-			System.out.println("==================");
-		}while(doNextList());
+			if(doAdd.get()){
+				resultMap = externPara(resultMap);
+				// å…¥åº“
+				parseFileDao.addRecord(resultMap, sql_id);
+				MtcThreadLocalMgr.getSession().commitConnWithoutClose();
+			}
+		} while (doNextList());
 	}
-	
-	@SuppressWarnings("unchecked")
-	private void repeatScanNode(Element parentElement, String[] nodeNames, Map<String, String> resultMap,int i)
-	{
+
+	private void repeatScanNode(Element parentElement, String[] nodeNames, Map<String, String> resultMap, int i) {
 		String nodeName = nodeNames[i + 2];
+		if (parentElement.element(nodeName) == null) {
+			return;
+		}
+		@SuppressWarnings("unchecked")
 		List<Element> nextElements = parentElement.elements(nodeName);
 		Element nextElement = null;
-		
-		if(nextElements.size() > 1){
-			if(!listSize.containsKey(i)){
+
+		if (nextElements.size() > 1  || listSize.containsKey(i)) {
+			if (!listSize.containsKey(i)) {
 				nextElement = nextElements.get(0);
 				listSize.put(i, nextElements.size());
 				indexList.set(i, 0);
-			}else{
-				nextElement = nextElements.get((Integer)indexList.get(i));
+			} else {
+				if(nextElements.size() <= (Integer)indexList.get(i)){
+					doAdd.set(false);
+					return ;
+				}
+				nextElement = nextElements.get((Integer) indexList.get(i));
 			}
-			repeatScanNode(nextElement,nodeNames,resultMap,++i);
-		}else if(parentElement.element(nodeName).isTextOnly()){//Ò¶×Ó½Úµã
-			System.out.println(parentElement.element(nodeName).getPath() + "=" + nextElements.get(0).getText());
-			resultMap.put(parentElement.element(nodeName).getPath(),nextElements.get(0).getText());
-		}else{//·ÇlistµÄÖĞ¼ä½Úµã
+			repeatScanNode(nextElement, nodeNames, resultMap, ++i);
+		} else if (parentElement.element(nodeName).isTextOnly()) {// å¶å­èŠ‚ç‚¹
+			resultMap.put(parentElement.element(nodeName).getPath(), nextElements.get(0).getText());
+		} else {// élistçš„ä¸­é—´èŠ‚ç‚¹
 			nextElement = parentElement.element(nodeName);
-			repeatScanNode(nextElement,nodeNames,resultMap,++i);
+			repeatScanNode(nextElement, nodeNames, resultMap, ++i);
 		}
 	}
-
-	/**
-	 * @param parentElement ÉÏ¼¶ÔªËØ
-	 * @param nodeNames  ±éÀú½Úµã²ã´Î
-	 * @param resultMap  ½á¹û¼¯ºÏ
-	 * @param i ¼¯ºÏÏÂ±ê
-	 * µÚÒ»´ÎÉ¨ÃèxmlÊı¾İ
-	 */
-	/**
-	 * ½«×îÉîÒ»²ãlistµÄË÷Òı+1£¬Èç¹û×îÉî²ã±éÀúÍê£¬ÖÃ0,ÉÏÒ»²ãlist+1
-	 */
-	private boolean doNextList(){
-		//È¡×îµ×²ãlistµÄ¸öÊı
+	private boolean doNextList() {
+		// å–æœ€åº•å±‚listçš„ä¸ªæ•°
 		int i = indexList.size() - 1;
-		
-		while(i >= 0){
-			int index = (int) indexList.get(i);//ÉÏÒ»´ÎÈ¥listµÄÏÂ±ê
-			if(index >= 0){
-				//×îÉîÒ»²ãlistÊÇ·ñ±éÀúÍê£¬Èç¹ûÃ»ÓĞ,ÏÂ±ê+1Èç¹û±éÀúÍêÖÃ0,ÉÏÒ»²ãlistÏÂ±ê+1
-				if(index < listSize.get(i) - 1){
-					index ++;
+
+		while (i >= 0) {
+			int index = (int) indexList.get(i);// ä¸Šä¸€æ¬¡å»listçš„ä¸‹æ ‡
+			if (index >= 0) {
+				// æœ€æ·±ä¸€å±‚listæ˜¯å¦éå†å®Œï¼Œå¦‚æœæ²¡æœ‰,ä¸‹æ ‡+1å¦‚æœéå†å®Œç½®0,ä¸Šä¸€å±‚listä¸‹æ ‡+1
+				if (index < listSize.get(i) - 1) {
+					index++;
 					indexList.set(i, index);
 					return true;
-				}else{
+				} else {
 					index = 0;
 					indexList.set(i, index);
-					i --;
+					i--;
 				}
-			}else{
-				i --;
+			} else {
+				i--;
 			}
 		}
 		return false;
 	}
+
+	protected Map<String, String> externPara(Map<String, String> externPara) {
+		return externPara;
+	}
+
+	private void finish() {
+		logCache.debug(GlobalDefs.PLUGIN_LOG_KEY, "XmlFileHandler call end ...");
+	}
+
+	public Map<String, Object> getSmcFileOperation() {
+		return smcFileOperation;
+	}
+
+	public void setSmcFileOperation(Map<String, Object> smcFileOperation) {
+		this.smcFileOperation = smcFileOperation;
+	}
+
+	public String getFile_name() {
+		return file_name;
+	}
+
+	public void setFile_name(String file_name) {
+		this.file_name = file_name;
+	}
+
+	public String getFile_template_id() {
+		return file_template_id;
+	}
+
+	public void setFile_template_id(String file_template_id) {
+		this.file_template_id = file_template_id;
+	}
+
 }
